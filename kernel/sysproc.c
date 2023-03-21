@@ -58,8 +58,6 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
-
-
   if(argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
@@ -81,6 +79,31 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  uint64 base;
+  int len;
+  uint64 maskaddr;
+  struct proc *p;
+  pte_t check_pte;
+  int i;
+  if (argaddr(0, &base) < 0 || argaddr(2, &maskaddr)<0 || argint(1, &len)<0)
+    return -1;
+  int mask = 0;
+  p = myproc();
+  // 开始搞检查
+  for (i = 0;i<len;i++)
+  {
+    pte_t *pteptr;
+    if ((pteptr = walk(p->pagetable, base + (uint64)PGSIZE*i, 0))==0)
+      continue;
+    check_pte=*pteptr;
+    if (check_pte & PTE_A)
+    {
+      mask |= (1 << i);
+      *pteptr ^= PTE_A;
+    }
+  }
+  if (copyout(p->pagetable, maskaddr, (char *)&mask, sizeof(mask)) < 0)
+    return -1;
   return 0;
 }
 #endif

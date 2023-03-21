@@ -119,9 +119,18 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-
+  
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  //Allocate a usyscall page.(因为对于usyscall来说只申请了指针，并没有真的申请存储内容的物理页块，所以要先分配物理页块)
+  //kalloc返回的是内核空间中可用的虚地址，在内核空间中每次使用虚地址会被默认（由硬件实现）转化为物理地址，所以可以在后面map中作为物理地址传入
+  if((p->usyscall=(struct usyscall*)kalloc())==0)
+  {
     freeproc(p);
     release(&p->lock);
     return 0;
@@ -141,6 +150,7 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->usyscall->pid = p->pid;
   return p;
 }
 
@@ -153,6 +163,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->usyscall)
+    kfree((void*)p->usyscall);
+  p->usyscall = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -196,6 +209,14 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
+    uvmunmap(pagetable, USYSCALL, 1, 0);
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }  
+
   return pagetable;
 }
 
@@ -206,6 +227,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 

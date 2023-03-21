@@ -77,6 +77,9 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+
+//是一个三级页表
+//pte是一个页 PageTableEntry
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -431,4 +434,33 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void ptePrint(pagetable_t, int);
+
+void vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  ptePrint(pagetable, 2);
+  return;
+}
+
+void ptePrint(pagetable_t pagetable,int lev)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  char preName[3][16] = {".. .. ..", ".. ..", ".."};
+  for (int i = 0; i < 512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);//打印合法的pte，并且要明确level
+      printf("%s%d: pte %p pa %p\n", preName[lev], i, pte, child);
+      if(lev>0)
+        ptePrint((pagetable_t)child, lev - 1);
+    } else if(pte & PTE_V){
+      panic("freewalk: leaf");
+    }
+  }
+  return;
 }
