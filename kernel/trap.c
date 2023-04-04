@@ -77,8 +77,23 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  //该语句用于判断是否为时钟中断，若是则调用yield()函数，将当前进程放入就绪队列中
+  //sigalarm很大程度上要借助这个函数实现
+  if(which_dev == 2){
+    p->passed_tick++;
+    if (p->interval != 0 && p->passed_tick == p->interval)
+    {
+      *(p->sigtrapframe) = *(p->trapframe);
+      p->passed_tick = 0;
+      //此时应该回到用户空间,并且执行p->handler在用户空间所指向的函数
+      p->trapframe->epc=p->handler;
+      p->saved_interval = p->interval;
+      p->interval = 0;
+    }
     yield();
+  }
+  
+    
 
   usertrapret();
 }

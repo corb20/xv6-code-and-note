@@ -57,8 +57,8 @@ sys_sleep(void)
 {
   int n;
   uint ticks0;
-
-  if(argint(0, &n) < 0)
+  backtrace();
+  if (argint(0, &n) < 0)
     return -1;
   acquire(&tickslock);
   ticks0 = ticks;
@@ -94,4 +94,31 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+//这件事本质上不是靠系统调用来完成的，而是靠时钟中断来完成的
+//sigalarm只是负责将参数和将要调用的用户函数赋给进程，真实调用是在时钟中断中完成的
+uint64 sys_sigalarm(void)
+{
+  int n;
+  uint64 fn;
+  if (argint(0, &n) < 0)
+    return -1;
+  if(argaddr(1, &fn) < 0)
+    return -1;
+  struct proc* p = myproc();
+  p->handler = fn;
+  p->interval= n;
+  p->saved_interval = n;
+  p->passed_tick = 0;
+
+  return 0;
+}
+
+uint64 sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  *(p->trapframe) = *(p->sigtrapframe);
+  p->interval = p->saved_interval;
+  return 0;
 }
