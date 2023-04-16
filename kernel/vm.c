@@ -301,9 +301,10 @@ int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
+  pte_t *newpte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  //char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -312,16 +313,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    //   kfree(mem);
+    //   goto err;
+    // }
+    *pte &= ~(PTE_W);
+    *pte |= (PTE_COW);
+    if (mappages(new, i, PGSIZE, pa, flags) != 0)
+    {
+      //kfree(mem);
       goto err;
     }
+    //如何为pa计数？准备一个超大的数组？
+    krefalloc((char *)pa);
+    if ((newpte = walk(new, i, 0)) == 0)
+      panic("uvmcopy: newpte walk failed");
+    *newpte &= ~(PTE_W);
+    *newpte |= PTE_COW;
   }
   return 0;
-
+  
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
@@ -348,6 +362,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  if(iscow(dstva,pagetable)==0){
+    if(reWriteVa(dstva, pagetable)<0)
+      return -1;
+  }
+
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
@@ -356,13 +375,16 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+    void *mappa = (void *)(pa0 + (dstva - va0));
+    //在memmove之前就要恢复可写状态
+    memmove(mappa, src, n);
 
     len -= n;
     src += n;
     dstva = va0 + PGSIZE;
   }
   return 0;
+  
 }
 
 // Copy from user to kernel.
@@ -431,4 +453,103 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int isCopyOnWriteTrap(uint64 va,pagetable_t pagetable){
+  pte_t *pte;
+  pte_t *newpte;
+  uint flags;
+  uint64 oldpa;
+  uint64 newpa;
+
+  pte = walk(pagetable, va, 0);
+
+  //不是copyOnWrite的情况
+  if(!((*pte & (PTE_V)) && !(*pte & (PTE_W)) && (*pte & PTE_COW)))
+    return -1;
+  printf("write Page Fault %p \n", va);
+  printf("the page is user Page:%d", *pte & (PTE_U));
+  oldpa = PTE2PA(*pte);
+  newpa = (uint64)kalloc();
+  flags = PTE_FLAGS(*pte);
+  if (newpa == 0)
+  {
+    printf("can not alloc new mem");
+    goto err;
+  }
+  else
+  {
+    memmove((char *)newpa, (char *)oldpa, PGSIZE);
+    // 对该va所对应的地址做修改
+    uvmunmap(pagetable, PGROUNDDOWN(va), 1, 1);
+    kfree((char*)oldpa);
+    if (mappages(pagetable, PGROUNDDOWN(va), PGSIZE, newpa, flags | PTE_W) != 0)
+    {
+      kfree((char *)newpa);
+      goto err;
+    }
+
+    //copyOnWrite的新页表修改flags
+    if((newpte=walk(pagetable,va,0))==0)
+      panic("uvmcopy: newpte walk failed");
+    *newpte &= ~(PTE_COW);
+  }
+  return 0;
+err:
+  uvmunmap(pagetable, PGROUNDDOWN(va), 1, 1);
+  return -1;
+}
+
+
+int iscow(uint64 va,pagetable_t pagetable){
+  pte_t *pte;
+  if (va >= MAXVA)
+    return -1;
+  if((pte= walk(pagetable, va, 0))==0)
+    return -1;
+  if (!(*pte & PTE_V))
+    return -1;
+  if((*pte & PTE_COW))
+    return 0;
+  return -1;
+}
+
+int reWriteVa(uint64 va,pagetable_t pagetable){
+  pte_t *pte;
+  pte_t *newpte;
+  char *oldpa;
+  char *newpa;
+  uint flags;
+
+  pte = walk(pagetable, va, 0);
+  oldpa = (char *)PTE2PA(*pte);
+  // printf("write Page Fault %p \n", va);
+  // printf("the page is user Page:%d \n", *pte & (PTE_U));
+
+  // 如果只有一个索引，并且因为cow不能阅读，那么就恢复他的阅读权限即可
+  if(get_kreftimes(oldpa)==1){
+    *pte |= PTE_W;
+    *pte &= ~(PTE_COW);
+    return 0;
+  }
+
+  //否则需要分配新的内存
+  newpa = kalloc();
+  if(newpa==0)
+    return -1;
+  memmove(newpa, oldpa, PGSIZE);
+  flags = PTE_FLAGS(*pte);
+
+  *pte = PA2PTE((uint64)newpa) | flags | PTE_W;
+
+  //uvmunmap(pagetable, PGROUNDDOWN(va), 1, 0);
+  // if (mappages(pagetable, PGROUNDDOWN(va), PGSIZE, (uint64)newpa,flags|PTE_W )<0){
+  //   uvmunmap(pagetable, PGROUNDDOWN(va), 1, 0);
+  //   kfree(newpa);
+  //   return -1;
+  // }
+  newpte = walk(pagetable, va, 0);
+  *newpte &= ~PTE_COW;
+  kfree((void *)oldpa);
+  return 0;
 }
