@@ -312,7 +312,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
     // if((mem = kalloc()) == 0)
     //   goto err;
     // memmove(mem, (char*)pa, PGSIZE);
@@ -322,6 +321,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // }
     *pte &= ~(PTE_W);
     *pte |= (PTE_COW);
+    flags = PTE_FLAGS(*pte);
     if (mappages(new, i, PGSIZE, pa, flags) != 0)
     {
       //kfree(mem);
@@ -331,8 +331,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     krefalloc((char *)pa);
     if ((newpte = walk(new, i, 0)) == 0)
       panic("uvmcopy: newpte walk failed");
-    *newpte &= ~(PTE_W);
-    *newpte |= PTE_COW;
   }
   return 0;
   

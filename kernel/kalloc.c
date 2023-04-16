@@ -72,6 +72,7 @@ kfree(void *pa)
   if (page_ref[refIndex((uint64)pa)].reftimes < 1)
   {
     // Fill with junk to catch dangling refs.
+    //printf("free the page:%p\n", (uint64)pa);
     memset(pa, 1, PGSIZE);
     acquire(&kmem.lock);
     r->next = kmem.freelist;
