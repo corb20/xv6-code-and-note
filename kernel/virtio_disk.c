@@ -203,6 +203,10 @@ alloc3_desc(int *idx)
 void
 virtio_disk_rw(struct buf *b, int write)
 {
+  if(write)
+  {
+    printf("bwrite %d\n", b->blockno);
+  }
   uint64 sector = b->blockno * (BSIZE / 512);
 
   acquire(&disk.vdisk_lock);

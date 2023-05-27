@@ -630,10 +630,10 @@ namex(char *path, int nameiparent, char *name)
 {
   struct inode *ip, *next;
 
-  if(*path == '/')
+  if(*path == '/')//'/'打头，从根目录往后找（绝对路径
     ip = iget(ROOTDEV, ROOTINO);
   else
-    ip = idup(myproc()->cwd);
+    ip = idup(myproc()->cwd);//否则从当前目录往后找（相对路径
 
   while((path = skipelem(path, name)) != 0){
     ilock(ip);
@@ -659,6 +659,8 @@ namex(char *path, int nameiparent, char *name)
   }
   return ip;
 }
+
+//namex就是一层一层向下找inode
 
 struct inode*
 namei(char *path)

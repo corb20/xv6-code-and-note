@@ -124,7 +124,7 @@ fileread(struct file *f, uint64 addr, int n)
     r = devsw[f->major].read(1, addr, n);
   } else if(f->type == FD_INODE){
     ilock(f->ip);
-    if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
+    if((r = readi(f->ip, 1, addr, f->off, n)) > 0)//f->off表示在当前file所属的进程中，文件已经被读到哪了
       f->off += r;
     iunlock(f->ip);
   }
