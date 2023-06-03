@@ -1,6 +1,9 @@
 struct stat;
 struct rtcdate;
 
+typedef int size_t;
+typedef int off_t;
+
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
@@ -23,6 +26,9 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+
+void *mmap(void *, size_t, int, int,int, off_t);
+int munmap(void*,size_t);
 
 // ulib.c
 int stat(const char*, struct stat*);

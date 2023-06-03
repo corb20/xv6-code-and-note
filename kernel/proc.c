@@ -226,6 +226,7 @@ void
 userinit(void)
 {
   struct proc *p;
+  int i;
 
   p = allocproc();
   initproc = p;
@@ -234,6 +235,11 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+
+  p->max_addr=TRAPFRAME;
+  for(i=0;i<MAXVMA;i++){
+    p->vma_list[i].isValid=0;
+  }
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter

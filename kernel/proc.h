@@ -18,6 +18,15 @@ struct context {
   uint64 s11;
 };
 
+struct vma{
+  int isValid;
+  uint64 addr;
+  uint length;
+  int prot;
+  int flag;
+  struct file* f;
+};
+
 // Per-CPU state.
 struct cpu {
   struct proc *proc;          // The process running on this cpu, or null.
@@ -105,4 +114,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  uint64 max_addr;//强调，此处的max_addr是用户空间的va，和内核空间的不一样，只是二者共享一块TRAPFRAME和TRAMPOLINE仅此而已
+  struct vma vma_list[MAXVMA];
 };

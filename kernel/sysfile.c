@@ -484,3 +484,51 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mmap(void){
+  uint64 addr;
+  int len;
+  int prot;
+  int flags;
+  int fd;
+  int off;
+  struct file* f;
+
+  int i;
+
+  if(argaddr(0,&addr)<0 || argint(1,&len) || argint(2,&prot)<0
+  || argint(3,&flags) || argfd(4,&fd,&f) || argint(0,&off))
+  {
+    return -1;
+  }
+
+  //此处要做内存映射，将argaddr所指向的内存映射到fd的内存时
+  //又不做映射了，采用vma处理的方式
+
+  //当addr是0的时候，采用从trapframe向下生长的方式去解决
+  struct proc* p=myproc();
+  struct vma* vma;
+
+  for(i=0;i<MAXVMA;i++){
+    if(p->vma_list[i].isValid==0){
+      vma=&(p->vma_list[i]);
+
+      vma->addr=p->max_addr-len;
+      vma->length=len;
+      vma->isValid=1;
+      vma->flag=flags;//flag表示是否是share，如果是share，修改了，最后页释放的时候要执行写回操作
+      vma->prot=prot;//prot表示页的可读性和可写性
+
+      p->max_addr-=len;
+
+      return vma->addr;
+    }
+  }
+  return -1;
+}
+
+uint64
+sys_munmap(void){
+  return -1;
+}

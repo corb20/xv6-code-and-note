@@ -8,3 +8,6 @@ typedef unsigned int  uint32;
 typedef unsigned long uint64;
 
 typedef uint64 pde_t;
+
+// typedef uint size_t;
+// typedef unsigned long off_t;
