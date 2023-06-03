@@ -283,6 +283,36 @@ create(char *path, short type, short major, short minor)
   return ip;
 }
 
+int
+open_symlink(struct inode** lkip){
+  int depth=0;
+  char path[MAXPATH];
+  int r;
+  int n;
+  struct inode* ip=*lkip;
+  while (ip->type==T_SYMLINK)
+  {
+    n=ip->size;
+    if(depth==10){
+      return -1;
+    }
+    if((r=readi(ip,0,(uint64)path,0,n))<0)
+      return -1;
+    if(r!=n)
+      return -1;
+    iunlockput(ip);//此处需要深入去取inode了，原本的inode也无需保留，所以要用unlockput，否则inode会被占用完
+    ip = namei(path);
+    if (ip == 0){
+      *lkip = ip;
+      return -1;
+    }
+    ilock(ip);
+    depth++;
+  }
+  *lkip=ip;
+  return 0;
+}
+
 uint64
 sys_open(void)
 {
@@ -321,6 +351,15 @@ sys_open(void)
     end_op();
     return -1;
   }
+  int sym_state;
+  // 此处ip被偷天换日了，所以说要解决问题
+  if(ip->type==T_SYMLINK && ((omode & O_NOFOLLOW) ==0)){
+    if((sym_state=open_symlink(&ip))<0){
+      //iunlockput(ip);
+      end_op();
+      return -1;
+    }
+  }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -350,6 +389,8 @@ sys_open(void)
 
   return fd;
 }
+
+
 
 uint64
 sys_mkdir(void)
@@ -482,5 +523,62 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void){
+  struct inode *lkip;
+
+  char tgpath[MAXPATH];
+  char lkpath[MAXPATH];
+  int tgn,lkn;
+  int r,n1;
+  int off=0;
+
+  if((tgn = argstr(0, tgpath, MAXPATH)) < 0 || (lkn = argstr(1, lkpath, MAXPATH)) < 0){
+    printf("break point1");
+    return -1;
+  }
+    
+  
+  begin_op();
+
+  //要检查是否已经存在lkpath的文件
+  lkip = namei(lkpath);
+  if(lkip==0){
+    lkip = create(lkpath, T_FILE, 0, 0);
+  }
+  else{
+    ilock(lkip);
+  }
+  if (lkip == 0)
+  {
+    end_op();
+    printf("break point2");
+    return -1;
+  }
+
+  lkip->type=T_SYMLINK;
+  //将target的link写入lkip的inode中
+  while (off<tgn)
+  {
+    n1=tgn-off;
+    if((r=writei(lkip,0,(uint64)tgpath,off,n1)) > 0)
+      off+=r;
+    if(r!=n1)
+      break;
+  }
+  lkip->size=tgn;
+
+  iunlockput(lkip);
+  end_op();
+
+  //返回结果正确与否
+  if(off!=tgn){
+    printf("bk 3");
+    return -1;
+  }
+    
   return 0;
 }

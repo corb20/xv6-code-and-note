@@ -157,17 +157,22 @@ concur(void)
     if(pid == 0) {
       int m = 0;
       unsigned int x = (pid ? 1 : 97);
-      for(i = 0; i < 100; i++){
+      int procid = getpid();
+      for (i = 0; i < 100; i++)
+      {
         x = x * 1103515245 + 12345;
         if((x % 3) == 0) {
           symlink("/testsymlink/z", "/testsymlink/y");
-          if (stat_slink("/testsymlink/y", &st) == 0) {
+          printf("symsuccess in i:%d,pid:%d \n", i, procid);
+          if (stat_slink("/testsymlink/y", &st) == 0)
+          {
             m++;
             if(st.type != T_SYMLINK) {
               printf("FAILED: not a symbolic link\n", st.type);
               exit(1);
             }
           }
+          printf("stat_success in i:%d,pid:%d \n", i, procid);
         } else {
           unlink("/testsymlink/y");
         }

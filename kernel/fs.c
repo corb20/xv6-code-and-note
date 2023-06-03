@@ -259,8 +259,11 @@ iget(uint dev, uint inum)
   }
 
   // Recycle an inode entry.
-  if(empty == 0)
+  if(empty == 0){
+    //printf("panic inode nums:%d", inum);
     panic("iget: no inodes");
+  }
+    
 
   ip = empty;
   ip->dev = dev;
@@ -377,8 +380,10 @@ iunlockput(struct inode *ip)
 static uint
 bmap(struct inode *ip, uint bn)
 {
-  uint addr, *a;
-  struct buf *bp;
+  uint addr, *a1,*a2;
+  struct buf *bp1,*bp2;
+  uint ud_index;
+  uint index;
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
@@ -387,17 +392,51 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
+  //此处是一阶间接索引
   if(bn < NINDIRECT){
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->dev);
-      log_write(bp);
+    bp1 = bread(ip->dev, addr);
+    a1 = (uint*)bp1->data;
+    if((addr = a1[bn]) == 0){
+      a1[bn] = addr = balloc(ip->dev);
+      log_write(bp1);
     }
-    brelse(bp);
+    brelse(bp1);
+    return addr;
+  }
+  bn-=NINDIRECT;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+  //此处是二阶间接索引
+  if(bn < EXT_NINDIRECT){
+    // Load indirect block, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+
+    ud_index=bn/NINDIRECT;
+    index=bn%NINDIRECT;
+    
+    //一阶索引
+    bp1 = bread(ip->dev, addr);
+    a1 = (uint*)bp1->data;
+
+    if((addr = a1[ud_index]) == 0){
+      a1[ud_index] = addr = balloc(ip->dev);
+      log_write(bp1);
+    }
+
+    //二阶索引
+    bp2=bread(ip->dev,addr);
+    a2=(uint*)bp2->data;
+    
+    if((addr=a2[index])==0){
+      a2[index]=addr=balloc(ip->dev);
+      log_write(bp2);
+    }
+
+    //
+    brelse(bp1);
+    brelse(bp2);
     return addr;
   }
 
@@ -409,9 +448,9 @@ bmap(struct inode *ip, uint bn)
 void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  int i, j,k;
+  struct buf *bp,*bpi;
+  uint *a,*a2;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -430,6 +469,26 @@ itrunc(struct inode *ip)
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for(j = 0; j < NINDIRECT; j++){
+      if(a[j]){
+        bpi=bread(ip->dev,a[j]);
+        a2=(uint*)bpi->data;
+        for(k=0;k<NINDIRECT;k++){
+          if(a2[k])
+            bfree(ip->dev,a2[k]);
+        }
+        brelse(bpi);
+        bfree(ip->dev, a[j]);
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
