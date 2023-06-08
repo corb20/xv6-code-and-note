@@ -15,7 +15,7 @@ char buf[BSIZE];
 int
 main(int argc, char *argv[])
 {
-  mmap_test();
+  mmap_test();//终于过了，我要哭死了 55555555
   fork_test();
   printf("mmaptest: all tests succeeded\n");
   exit(0);
@@ -128,6 +128,7 @@ mmap_test(void)
   if (close(fd) == -1)
     err("close");
   _v1(p);
+  //printf("test unmap write back");
   for (i = 0; i < PGSIZE*2; i++)
     p[i] = 'Z';
   if (munmap(p, PGSIZE*2) == -1)

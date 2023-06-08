@@ -19,11 +19,14 @@ struct context {
 };
 
 struct vma{
+  struct spinlock lock;
+
   int isValid;
   uint64 addr;
   uint length;
   int prot;
   int flag;
+  int off;
   struct file* f;
 };
 

@@ -6,6 +6,8 @@
 #include "proc.h"
 #include "defs.h"
 
+#include "fcntl.h"
+
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -47,12 +49,15 @@ void
 procinit(void)
 {
   struct proc *p;
+  int i;
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
+      for(i=0;i<MAXVMA;i++)
+        initlock(&(p->vma_list[i].lock),"vma_lock");
   }
 }
 
@@ -281,10 +286,22 @@ fork(void)
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
+  struct vma *vma;
+  
 
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
+  }
+
+  np->max_addr=p->max_addr;
+  //对于vma也要拷贝过来
+  for(i=0;i<MAXVMA;i++){
+    vma=&(p->vma_list[i]);
+    if(vma->isValid){
+      memmove(&np->vma_list[i],vma,sizeof(struct vma));
+      filedup(vma->f);
+    }
   }
 
   // Copy user memory from parent to child.
@@ -346,9 +363,22 @@ void
 exit(int status)
 {
   struct proc *p = myproc();
+  struct vma *vma;
 
-  if(p == initproc)
-    panic("init exiting");
+  for (int i = 0; i < MAXVMA;i++){
+    vma = &(p->vma_list[i]);
+    if (vma->isValid){
+      uint64 pgsz = (PGROUNDUP(vma->addr + vma->length) - vma->addr) / PGSIZE;
+      if(vma->flag==MAP_SHARED){
+        writeBk(vma->addr,vma->length,vma->f,vma->off);
+      }
+      uvmunmap(p->pagetable, vma->addr, pgsz, 1);
+      fileclose(vma->f);
+      vma->isValid = 0;
+    }
+  }
+    if (p == initproc)
+      panic("init exiting");
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -660,3 +690,18 @@ procdump(void)
     printf("\n");
   }
 }
+
+struct vma* alloc_vma(struct proc *p){
+  struct vma* vma;
+  for(vma=p->vma_list;vma<p->vma_list+MAXVMA;vma++){
+    acquire(&vma->lock);
+    if(vma->isValid==0){
+      release(&vma->lock);
+      vma->isValid=1;
+      return vma;
+    }
+    release(&vma->lock);  
+  }
+  return 0;
+}
+

@@ -495,40 +495,122 @@ sys_mmap(void){
   int off;
   struct file* f;
 
-  int i;
-
   if(argaddr(0,&addr)<0 || argint(1,&len) || argint(2,&prot)<0
   || argint(3,&flags) || argfd(4,&fd,&f) || argint(0,&off))
   {
     return -1;
   }
 
+  if(prot ==PROT_NONE)
+    return -1;
+  if( (prot & PROT_READ) && f->readable==0)
+    return -1;
+  if( (prot & PROT_WRITE)&& flags==MAP_SHARED && f->writable==0)
+    return -1;
   //此处要做内存映射，将argaddr所指向的内存映射到fd的内存时
   //又不做映射了，采用vma处理的方式
 
   //当addr是0的时候，采用从trapframe向下生长的方式去解决
   struct proc* p=myproc();
   struct vma* vma;
-
-  for(i=0;i<MAXVMA;i++){
-    if(p->vma_list[i].isValid==0){
-      vma=&(p->vma_list[i]);
-
-      vma->addr=p->max_addr-len;
-      vma->length=len;
-      vma->isValid=1;
-      vma->flag=flags;//flag表示是否是share，如果是share，修改了，最后页释放的时候要执行写回操作
-      vma->prot=prot;//prot表示页的可读性和可写性
-
-      p->max_addr-=len;
-
-      return vma->addr;
-    }
+  
+  vma=alloc_vma(p);
+  if(vma==0){
+    printf("allocvma failed");
+    return -1;
   }
-  return -1;
+
+  acquire(&vma->lock);
+  vma->addr=PGROUNDDOWN(p->max_addr-len);//此处要向下取整
+  vma->length=len;
+  vma->flag=flags;//flag表示是否是share，如果是share，修改了，最后页释放的时候要执行写回操作
+  vma->prot=prot;//prot表示页的可读性和可写性
+  vma->off=off;
+  vma->f=f;
+
+  filedup(f);
+  p->max_addr=vma->addr;
+
+  release(&vma->lock);
+  return vma->addr;
 }
 
 uint64
 sys_munmap(void){
-  return -1;
+  uint64 addr;
+  int len;
+  struct proc* p;
+  int i;
+  int npage;
+  struct vma* vma;
+  struct vma* n_vma;
+  struct file* f;
+  int off;
+
+  if(argaddr(0,&addr)<0 || argint(1,&len)<0)
+    return -1;
+  
+  if(addr%PGSIZE!=0){
+    printf("addr need align at PGSIZE");
+    return -1;
+  }
+  
+  p=myproc();
+  //默认munmap不会跨越两个vma区间？
+  vma=0;
+  for(i=0;i<MAXVMA;i++){
+    vma=&p->vma_list[i];
+    if(vma->isValid && addr>=vma->addr && addr<vma->addr+vma->length)
+    {
+      if(addr+len > vma->addr+vma->length)
+      {
+        printf("can't modify across moere than 1 vma");
+        return -1;
+      }
+      break;
+    }
+  }
+  if(vma==0){
+    printf("no area is mmaped");
+    return 0;
+  }
+
+  //如果unmap的是中间，那么两头要新建自己的vma
+  if(vma->addr < addr){
+    n_vma=alloc_vma(p);
+    if(n_vma==0)
+      return -1;
+    *n_vma=*vma;
+    n_vma->length=addr-vma->addr;
+    filedup(n_vma->f);
+  }
+
+  if(vma->addr + vma->length > addr+len){
+    n_vma=alloc_vma(p);
+    if(n_vma==0)
+      return -1;
+    *n_vma=*vma;//先将基本的属性搞过去
+    n_vma->addr=addr+len;
+    n_vma->length=vma->addr + vma->length - (addr+len);
+    n_vma->off=vma->off+addr+len-vma->addr;
+    filedup(n_vma->f);
+  }
+
+  f=vma->f;
+  off=vma->off+addr-vma->addr;
+  if(vma->flag==MAP_SHARED)
+    writeBk(addr,len,f,off);
+  
+  fileclose(vma->f);
+  //将页取消映射
+  npage=(PGROUNDUP(addr+len)-addr)/PGSIZE;
+  uvmunmap(p->pagetable,addr,npage,1);
+
+  //回收vma
+  acquire(&vma->lock);
+  vma->isValid=0;
+  release(&vma->lock);
+
+  //虚拟内存不回收哈
+  return 0;
 }

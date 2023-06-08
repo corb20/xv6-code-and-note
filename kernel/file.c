@@ -13,6 +13,8 @@
 #include "stat.h"
 #include "proc.h"
 
+#include "fcntl.h"
+
 struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
@@ -180,3 +182,98 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+int vmatrap_handler(uint64 va,struct vma* vma)
+{
+  //针对该块申请空间，并且将文件中的内容拷贝过来
+  
+  uint64 pa;
+  uint64 cpva;
+  uint64 vsz;
+  struct file* f=vma->f;
+  struct proc* p;
+  int i;
+  int r;
+  int off;
+  int perm;
+
+  va=PGROUNDDOWN(va);
+  vsz=vma->addr+vma->length - va;
+  if(vsz>PGSIZE)
+    vsz=PGSIZE;
+  
+  //申请物理空间进行映射
+  //acquire()
+  if((pa=(uint64)kalloc())==0){
+    printf("vmatrap_handler error: physical addr alloc failed");
+    return -1;
+  }
+  memset((void*)pa,0,PGSIZE);
+  p=myproc();
+
+  //该页的权限填写
+  perm=PTE_V | PTE_U;
+  if(vma->prot & PROT_READ)
+    perm |=PTE_R;
+  if(vma->prot & PROT_WRITE)
+    perm |=PTE_W;
+  if(vma->prot & PROT_EXEC)
+    perm |=PTE_X;
+
+  //映射
+  if((i=mappages(p->pagetable,va,vsz,pa,perm))<0) {
+    printf("vmatrap_handler error: mappages failed");
+    return -1;
+  }
+
+  //由于munmap的缘故导致vma的开头不再是PGSIZE取整的情况，所以写入时要做一下调整
+  if(va<vma->addr){
+    vsz=vsz-(vma->addr-va);
+    cpva=vma->addr;
+    off=vma->off;
+  }
+  else{
+    cpva=va;
+    off=vma->off+(va-vma->addr);
+  }
+
+  //映射完之后，将file的文件内容拷贝到相应的物理空间(目前只支持文件时inode的情况)
+  if(f->type==FD_INODE){
+    ilock(f->ip);
+    if((r=readi(f->ip,1,cpva,off,vsz))<0){
+      printf("vmatrap_handler error: read something from file failed");
+      iunlock(f->ip);
+      return -1;
+    }
+    iunlock(f->ip);
+  }
+  else{
+    printf("file is not inode");
+    return -1;
+  }
+  return 0;
+}
+
+int writeBk(uint64 addr,int len,struct file* f,int off){
+  //需要将对应的页写回
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    int i = 0;
+    int r;
+    while(i < len){
+      int n1 = len - i;
+      if(n1 > max)
+        n1 = max;
+      begin_op();
+      ilock(f->ip);
+      if ((r = writei(f->ip, 1, addr + i, off, n1)) > 0)
+        off += r;
+      iunlock(f->ip);
+      end_op();
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+
+    return 0;
+}
