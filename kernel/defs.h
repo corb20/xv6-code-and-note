@@ -178,6 +178,7 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             isPageWB(pagetable_t,uint64);
+int             lz_alloc_handler(uint64,pagetable_t);
 
 
 // plic.c

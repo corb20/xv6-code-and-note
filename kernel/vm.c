@@ -447,4 +447,20 @@ int isPageWB(pagetable_t pgtbl,uint64 va)//检测page是否需要write back
   return 0;
 }
 
+int lz_alloc_handler(uint64 va,pagetable_t pgtbl){
+  uint64 pa;
+  int i;
+  pa=(uint64)kalloc();
+  if(pa==0){
+    printf("kalloc failed");
+    return -1;
+  }
+  va=PGROUNDDOWN(va);
+  memset((void*)pa,0,PGSIZE);
+  if((i=mappages(pgtbl,va,PGSIZE,pa,PTE_U|PTE_V|PTE_W|PTE_R))<0){
+    kfree((void*)pa);
+    return-1;
+  }
+  return 0;
+}
 
