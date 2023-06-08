@@ -174,8 +174,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    if((*pte & PTE_V) == 0){
+      continue;
+      //panic("uvmunmap: not mapped");
+    }  
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -431,4 +433,21 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int lz_alloc_handler(uint64 va,pagetable_t pgtbl){
+  uint64 pa;
+  int i;
+  pa=(uint64)kalloc();
+  if(pa==0){
+    printf("kalloc failed");
+    return -1;
+  }
+  va=PGROUNDDOWN(va);
+  memset((void*)pa,0,PGSIZE);
+  if((i=mappages(pgtbl,va,PGSIZE,pa,PTE_U|PTE_W|PTE_R))<0){
+    kfree((void*)pa);
+    return-1;
+  }
+  return 0;
 }
