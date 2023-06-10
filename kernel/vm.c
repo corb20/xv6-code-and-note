@@ -177,7 +177,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     // if((*pte & PTE_V) == 0)
     //   panic("uvmunmap: not mapped");
     if((*pte & PTE_V) == 0){
-      printf("not mapped page\n");
+      //printf("not mapped page\n");
       continue;
     }
     if(PTE_FLAGS(*pte) == PTE_V)

@@ -69,18 +69,15 @@ usertrap(void)
   else if((which_dev = devintr()) != 0){
     // ok
   }
-  else if(r_scause()==15){
-    uint64 va=r_stval();//访问错误的虚拟地址
-    int i;
-    if((i=lz_alloc_handler(va,p->pagetable))<0)
-        p->killed=1;
-  }
   else if (r_scause()==13 || r_scause()==15)
   {
     uint64 va=r_stval();//访问错误的虚拟地址
     int i;
-
-    // else{
+    if(va<p->sz){
+      if((i=lz_alloc_handler(va,p->pagetable))<0)
+        p->killed=1;
+    }
+    else{
       //判断是否为vma内的地址没有分配内存页所引发的trap
       struct vma* vma;
       int ishandle=-1;
@@ -100,7 +97,7 @@ usertrap(void)
         printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
         p->killed=1;
       } 
-    // }
+    }
   }
   else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
