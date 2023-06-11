@@ -182,6 +182,11 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
+    else{
+      uint64 pa = PTE2PA(*pte);
+      if(get_kreftimes((void*)pa)>1)
+        krefdel((void*)pa);
+    }
     *pte = 0;
   }
 }

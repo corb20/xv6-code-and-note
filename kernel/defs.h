@@ -64,6 +64,7 @@ void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
 void            krefalloc(void *);
+void            krefdel(void *);
 int             get_kreftimes(void *);
 
 // log.c

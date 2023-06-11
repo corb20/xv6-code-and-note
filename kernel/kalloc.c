@@ -95,13 +95,14 @@ kalloc(void)
   r = kmem.freelist;
   pa = (uint64)r;
 
-  if (r)
+  if (r){
+    uint64 i=refIndex(pa);
+    acquire(&page_ref[i].lock);
+    page_ref[refIndex(pa)].reftimes = 1;
+    release(&page_ref[i].lock);
     kmem.freelist = r->next;
+  }
   release(&kmem.lock);
-
-  acquire(&page_ref[refIndex(pa)].lock);
-  page_ref[refIndex(pa)].reftimes = 1;
-  release(&page_ref[refIndex(pa)].lock);
   if (r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
@@ -116,6 +117,17 @@ krefalloc(void *pa)
 
   acquire(&(page_ref[refIndex((uint64)pa)].lock));
   page_ref[refIndex((uint64)pa)].reftimes++;
+  release(&(page_ref[refIndex((uint64)pa)].lock));
+}
+
+void
+krefdel(void *pa)
+{
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kRef Alloc");
+
+  acquire(&(page_ref[refIndex((uint64)pa)].lock));
+  page_ref[refIndex((uint64)pa)].reftimes--;
   release(&(page_ref[refIndex((uint64)pa)].lock));
 }
 
