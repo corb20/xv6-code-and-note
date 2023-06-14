@@ -571,6 +571,7 @@ sys_symlink(void){
   }
   lkip->size=tgn;
 
+  //此处使用iunlockput是因为申请完之后并不打算打开这个ip，也没有open，所以要iunlockput
   iunlockput(lkip);
   end_op();
 
